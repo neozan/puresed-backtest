@@ -238,18 +238,94 @@ def add_rsi(objective, ohlcv_df, timeframe, config_params):
     return ohlcv_df
 
 
-def check_signal_price(objective, symbol_type, time, signal, action_list, ohlcv_df, timeframe, config_params):
+def add_donchian(objective, ohlcv_df, timeframe, config_params):
+    def get_donchian_side(ohlcv_df):
+        if ohlcv_df['close'] > ohlcv_df['max_high']:
+            signal_side = 'buy'
+        elif ohlcv_df['close'] < ohlcv_df['min_low']:
+            signal_side = 'sell'
+        else:
+            signal_side = np.nan
+
+        return signal_side
+    
+    
+    signal_dict = get_signal_dict('donchian', objective, timeframe, config_params)
+    windows = signal_dict['windows']
+    
+    temp_df = ohlcv_df.copy()
+
+    max_high_list = temp_df['high'].rolling(window=windows).max()
+    min_low_list = temp_df['low'].rolling(window=windows).min()
+    
+    temp_df['max_high'] = max_high_list
+    temp_df['min_low'] = min_low_list
+    
+    temp_df['max_high'] = temp_df['max_high'].shift(periods=1)
+    temp_df['min_low'] = temp_df['min_low'].shift(periods=1)
+    temp_df['donchian_side'] = temp_df.apply(get_donchian_side, axis=1)
+    
+    donchian_list = temp_df['donchian_side'].fillna(method='ffill')
+    ohlcv_df['donchian_side'] = donchian_list
+    
+    return ohlcv_df
+
+
+def add_hull(objective, ohlcv_df, timeframe, config_params):
+    def cal_wma(series):
+        weight_list = list(range(1, len(series) + 1))
+        weighted_average_list = [i * j for i, j in zip(series, weight_list)]
+
+        wma = sum(weighted_average_list) / sum(weight_list)
+
+        return wma
+    
+    
+    def add_wma(df, input_col, windows):
+        wma_list = [None] * (windows - 1)
+
+        for i in range(len(df) - (windows - 1)):
+            close_series = df.loc[i:i + (windows - 1), input_col]
+            wma = cal_wma(close_series)
+            wma_list.append(wma)
+
+        return wma_list
+    
+    
+    def get_hull_side(ohlcv_df):
+        if ohlcv_df['hull'] > ohlcv_df['hull_prev']:
+            signal_side = 'buy'
+        else:
+            signal_side = 'sell'
+
+        return signal_side
+    
+    
+    signal_dict = get_signal_dict('hull', objective, timeframe, config_params)
+    windows = signal_dict['windows']
+    
+    temp_df = ohlcv_df.copy()
+
+    temp_df['hwma'] = add_wma(temp_df, 'close', int(round(windows / 2)))
+    temp_df['wma'] = add_wma(temp_df, 'close', windows)
+    temp_df['twma'] = (2 * temp_df['hwma']) - temp_df['wma']
+    hull_list = add_wma(temp_df, 'twma', int(round(windows ** (1 / 2))))
+    
+    temp_df['hull'] = hull_list
+    temp_df['hull_prev'] = temp_df['hull'].shift(periods=2)
+    hull_side_list = temp_df.apply(get_hull_side, axis=1)
+    
+    ohlcv_df['hull'] = hull_list
+    ohlcv_df['hull_side'] = hull_side_list
+    
+    return ohlcv_df
+
+
+def check_signal_side(objective, symbol_type, time, signal, action_list, ohlcv_df, timeframe, config_params):
     check_df = ohlcv_df[ohlcv_df['time'] <= time].reset_index(drop=True)
     check_series = check_df.loc[len(check_df) - 1, :]
     
-    action_price = check_series[signal]
-
-    if check_series['close'] > action_price:
-        action_side = 'buy'
-    elif check_series['close'] < action_price:
-        action_side = 'sell'
-    else:
-        action_side = 'no_action'
+    action_side = check_series[f'{signal}_side']
 
     if config_params[symbol_type][objective][timeframe][signal]['revert'] == True:
         action_side = revert_signal(action_side)

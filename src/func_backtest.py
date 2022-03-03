@@ -2,7 +2,7 @@ import pandas as pd
 import datetime as dt
 
 from func_get import get_unix_datetime, get_fetch_timeframe, get_ohlcv_df, group_timeframe, get_stop_price, update_stop_price
-from func_signal import add_sma, add_ema, add_tma, add_bollinger, add_supertrend, add_wt, add_rsi
+from func_signal import add_sma, add_ema, add_tma, add_bollinger, add_supertrend, add_wt, add_rsi, add_donchian, add_hull
 
 
 def gen_action_time_list(config_params, ohlcv_df_dict):
@@ -136,7 +136,9 @@ def add_signal(start_date, ohlcv_df_dict, interval_dict, config_params):
         'bollinger': add_bollinger,
         'supertrend': add_supertrend,
         'wt': add_wt,
-        'rsi': add_rsi
+        'rsi': add_rsi,
+        'donchian': add_donchian,
+        'hull': add_hull
     }
 
     ohlcv_df_dict = add_action_signal(ohlcv_df_dict, func_add_dict, config_params)
