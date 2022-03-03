@@ -12,10 +12,10 @@ def get_signal_dict(signal, objective, timeframe, config_params):
     return signal_dict
 
 
-def get_signal_side(df, signal):
-    if df['close'] > df[signal]:
+def get_signal_side(ohlcv_df, signal):
+    if ohlcv_df['close'] > ohlcv_df[signal]:
         signal_side = 'buy'
-    elif df['close'] < df[signal]:
+    elif ohlcv_df['close'] < ohlcv_df[signal]:
         signal_side = 'sell'
     else:
         signal_side = None
@@ -94,61 +94,54 @@ def add_bollinger(objective, ohlcv_df, timeframe, config_params):
 
 
 def add_supertrend(objective, ohlcv_df, timeframe, config_params):
-    signal_dict = get_signal_dict('supertrend', objective, timeframe, config_params)
-    atr_range = signal_dict['atr_range']
-    multiplier = signal_dict['multiplier']
-    
-    def add_atr(ohlcv_df, atr_range):
+    def cal_atr(ohlcv_df, atr_range):
         temp_df = ohlcv_df.copy()
 
         high_low = temp_df['high'] - temp_df['low']
-        high_close = np.abs(temp_df['high'] - temp_df['close'].shift())
-        low_close = np.abs(temp_df['low'] - temp_df['close'].shift())
+        high_close = np.abs(temp_df['high'] - temp_df['close'].shift(periods=1))
+        low_close = np.abs(temp_df['low'] - temp_df['close'].shift(periods=1))
 
         ranges = pd.concat([high_low, high_close, low_close], axis=1)
         true_range = np.max(ranges, axis=1)
         temp_df['true_range'] = true_range
-        ohlcv_df['atr'] = temp_df['true_range'].ewm(alpha=1 / atr_range, min_periods=atr_range).mean()
-        ohlcv_df = ohlcv_df.dropna().reset_index(drop=True)
+        atr_list = temp_df['true_range'].ewm(alpha=1 / atr_range, min_periods=atr_range).mean()
 
-        return ohlcv_df
-    
-    ohlcv_df = add_atr(ohlcv_df, atr_range)
-    temp_df = ohlcv_df.copy()
-    
-    supertrend_list = []
-    supertrend_side_list = []
-    final_upperband_list = []
-    final_lowerband_list = []
+        return atr_list
 
-    for i in range(len(temp_df)):
-        mid_price = (temp_df.loc[i, 'high'] + temp_df.loc[i, 'low']) / 2
-        default_atr = multiplier * temp_df.loc[i, 'atr']
+
+    def cal_basic_band(ohlcv_df, index, multiplier):
+        mid_price = (ohlcv_df.loc[index, 'high'] + ohlcv_df.loc[index, 'low']) / 2
+        default_atr = multiplier * ohlcv_df.loc[index, 'atr']
         basic_upperband = mid_price + default_atr
         basic_lowerband = mid_price - default_atr
 
+        return basic_upperband, basic_lowerband
+
+
+    def cal_final_band(ohlcv_df, index, basic_upperband, basic_lowerband, final_upperband_list, final_lowerband_list):
         try:
-            if (basic_upperband < final_upperband_list[i - 1]) | (temp_df.loc[i - 1, 'close'] > final_upperband_list[i - 1]):
+            if (basic_upperband < final_upperband_list[index - 1]) | (ohlcv_df.loc[i - 1, 'close'] > final_upperband_list[index - 1]):
                 final_upperband = basic_upperband
             else:
-                final_upperband = final_upperband_list[i - 1]
+                final_upperband = final_upperband_list[index - 1]
                 
-            if (basic_lowerband > final_lowerband_list[i - 1]) | (temp_df.loc[i - 1, 'close'] < final_lowerband_list[i - 1]):
+            if (basic_lowerband > final_lowerband_list[index - 1]) | (ohlcv_df.loc[i - 1, 'close'] < final_lowerband_list[index - 1]):
                 final_lowerband = basic_lowerband
             else:
-                final_lowerband = final_lowerband_list[i - 1]
+                final_lowerband = final_lowerband_list[index - 1]
         except IndexError:
             # First loop
             final_upperband = basic_upperband
             final_lowerband = basic_lowerband
-            
-        final_upperband_list.append(final_upperband)
-        final_lowerband_list.append(final_lowerband)
-            
-        if temp_df.loc[i, 'close'] > final_upperband:
+
+        return final_upperband, final_lowerband
+
+
+    def cal_supertrend(ohlcv_df, index, final_upperband, final_lowerband, supertrend_side_list):
+        if ohlcv_df.loc[index, 'close'] > final_upperband:
             supertrend = final_lowerband
             supertrend_side = 'buy'
-        elif temp_df.loc[i, 'close'] < final_lowerband:
+        elif ohlcv_df.loc[index, 'close'] < final_lowerband:
             supertrend = final_upperband
             supertrend_side = 'sell'
         else:
@@ -162,13 +155,39 @@ def add_supertrend(objective, ohlcv_df, timeframe, config_params):
                 supertrend = final_lowerband
             else:
                 supertrend = final_upperband
+
+        return supertrend, supertrend_side
+
+
+    signal_dict = get_signal_dict('supertrend', objective, timeframe, config_params)
+    atr_range = signal_dict['atr_range']
+    multiplier = signal_dict['multiplier']
+
+    temp_df = ohlcv_df.copy()
+
+    atr_list = cal_atr(ohlcv_df, atr_range)
+    temp_df['atr'] = atr_list
+    temp_df = temp_df.dropna().reset_index(drop=True)
+    
+    supertrend_list = []
+    supertrend_side_list = []
+    final_upperband_list = []
+    final_lowerband_list = []
+
+    for i in range(len(temp_df)):
+        basic_upperband, basic_lowerband = cal_basic_band(temp_df, i, multiplier)
+        final_upperband, final_lowerband = cal_final_band(temp_df, i, basic_upperband, basic_lowerband, final_upperband_list, final_lowerband_list)
+        
+        final_upperband_list.append(final_upperband)
+        final_lowerband_list.append(final_lowerband)
+            
+        supertrend, supertrend_side = cal_supertrend(temp_df, i, final_upperband, final_lowerband, supertrend_side_list)
         
         supertrend_side_list.append(supertrend_side)
         supertrend_list.append(supertrend)
 
-    ohlcv_df['supertrend'] = supertrend_list
-    ohlcv_df['supertrend_side'] = supertrend_side_list
-    ohlcv_df = ohlcv_df.drop(columns=['atr'])
+    ohlcv_df['supertrend'] = ([None] * (atr_range - 1)) + supertrend_list
+    ohlcv_df['supertrend_side'] = ([None] * (atr_range - 1)) + supertrend_side_list
     
     return ohlcv_df
 
@@ -262,6 +281,35 @@ def check_signal_side_change(objective, symbol_type, time, signal, action_list, 
 
 
 def check_signal_band(objective, symbol_type, time, signal, action_list, ohlcv_df, timeframe, config_params):
+    def cal_outer_band(indicator, upperband, lowerband):
+        if indicator <= lowerband:
+            action_side = 'buy'
+        elif indicator >= upperband:
+            action_side = 'sell'
+        else:
+            action_side = 'no_action'
+
+        return action_side
+
+
+    def cal_inner_band(action_list, indicator, upperband, lowerband):
+        if (len(action_list) >= 1):
+            if (action_list[-1] == 'buy') & (indicator < upperband):
+                action_side = 'buy'
+            elif (action_list[-1] == 'buy') & (indicator >= upperband):
+                action_side = 'sell'
+            elif (action_list[-1] == 'sell') & (indicator > lowerband):
+                action_side = 'sell'
+            elif (action_list[-1] == 'sell') & (indicator <= lowerband):
+                action_side = 'buy'
+            else:
+                action_side = 'no_action'
+        else:
+            raise ValueError("Must be used with other signals")
+
+        return action_side
+
+
     check_df = ohlcv_df[ohlcv_df['time'] <= time].reset_index(drop=True)
     check_series = check_df.loc[len(check_df) - 1, :]
 
@@ -280,27 +328,10 @@ def check_signal_band(objective, symbol_type, time, signal, action_list, ohlcv_d
         lowerband = check_series[f'{signal}_lower']
     
     if config_params[symbol_type][objective][timeframe][signal]['trigger'] == 'outer':
-        if indicator <= lowerband:
-            action_side = 'buy'
-        elif indicator >= upperband:
-            action_side = 'sell'
-        else:
-            action_side = 'no_action'
+        action_side = cal_outer_band(indicator, upperband, lowerband)
     
     elif config_params[symbol_type][objective][timeframe][signal]['trigger'] == 'inner':
-        if (len(action_list) >= 1):
-            if (action_list[-1] == 'buy') & (indicator < upperband):
-                action_side = 'buy'
-            elif (action_list[-1] == 'buy') & (indicator >= upperband):
-                action_side = 'sell'
-            elif (action_list[-1] == 'sell') & (indicator > lowerband):
-                action_side = 'sell'
-            elif (action_list[-1] == 'sell') & (indicator <= lowerband):
-                action_side = 'buy'
-            else:
-                action_side = 'no_action'
-        else:
-            raise ValueError("Must be used with other signals")
+        action_side = cal_inner_band(action_list, indicator, upperband, lowerband)
 
     if config_params[symbol_type][objective][timeframe][signal]['revert'] == True:
         action_side = revert_signal(action_side)
