@@ -78,14 +78,15 @@ def add_tma(objective, ohlcv_df, timeframe, config_params):
 def add_bollinger(objective, ohlcv_df, timeframe, config_params):
     signal_dict = get_signal_dict('bollinger', objective, timeframe, config_params)
     windows = signal_dict['windows']
+    std = signal_dict['std']
     
     temp_df = ohlcv_df.copy()
 
     sma_list = temp_df['close'].rolling(window=windows).mean()
     std_list = temp_df['close'].rolling(window=windows).std(ddof=0)
     
-    bollinger_upper = sma_list + (std_list * signal_dict['std'])
-    bollinger_lower = sma_list - (std_list * signal_dict['std'])
+    bollinger_upper = sma_list + (std_list * std)
+    bollinger_lower = sma_list - (std_list * std)
     
     ohlcv_df['bollinger_upper'] = bollinger_upper
     ohlcv_df['bollinger_lower'] = bollinger_lower
