@@ -75,6 +75,24 @@ def add_tma(objective, ohlcv_df, timeframe, config_params):
     return ohlcv_df
 
 
+def add_bollinger(objective, ohlcv_df, timeframe, config_params):
+    signal_dict = get_signal_dict('bollinger', objective, timeframe, config_params)
+    windows = signal_dict['windows']
+    
+    temp_df = ohlcv_df.copy()
+
+    sma_list = temp_df['close'].rolling(window=windows).mean()
+    std_list = temp_df['close'].rolling(window=windows).std(ddof=0)
+    
+    bollinger_upper = sma_list + (std_list * signal_dict['std'])
+    bollinger_lower = sma_list - (std_list * signal_dict['std'])
+    
+    ohlcv_df['bollinger_upper'] = bollinger_upper
+    ohlcv_df['bollinger_lower'] = bollinger_lower
+    
+    return ohlcv_df
+
+
 def add_supertrend(objective, ohlcv_df, timeframe, config_params):
     signal_dict = get_signal_dict('supertrend', objective, timeframe, config_params)
     atr_range = signal_dict['atr_range']
@@ -241,27 +259,43 @@ def check_signal_side_change(objective, symbol_type, time, signal, action_list, 
 
         action_list.append(action_side)
         return action_side
-    
-    
+
+
 def check_signal_band(objective, symbol_type, time, signal, action_list, ohlcv_df, timeframe, config_params):
     check_df = ohlcv_df[ohlcv_df['time'] <= time].reset_index(drop=True)
     check_series = check_df.loc[len(check_df) - 1, :]
+
+    band_type_dict = {
+        'signal': ['rsi', 'wt'],
+        'price': ['bollinger']
+    }
+
+    if signal in band_type_dict['signal']:
+        indicator = check_series[signal]
+        upperband = config_params[symbol_type][objective][timeframe][signal]['overbought']
+        lowerband = config_params[symbol_type][objective][timeframe][signal]['oversold']
+    elif signal in band_type_dict['price']:
+        indicator = check_series['close']
+        upperband = check_series[f'{signal}_upper']
+        lowerband = check_series[f'{signal}_lower']
     
     if config_params[symbol_type][objective][timeframe][signal]['trigger'] == 'outer':
-        if check_series[signal] <= config_params[symbol_type][objective][timeframe][signal]['oversold']:
+        if indicator <= lowerband:
             action_side = 'buy'
-        elif check_series[signal] >= config_params[symbol_type][objective][timeframe][signal]['overbought']:
+        elif indicator >= upperband:
             action_side = 'sell'
+        else:
+            action_side = 'no_action'
     
     elif config_params[symbol_type][objective][timeframe][signal]['trigger'] == 'inner':
         if (len(action_list) >= 1):
-            if (action_list[-1] == 'buy') & (check_series[signal] < config_params[symbol_type][objective][timeframe][signal]['overbought']):
+            if (action_list[-1] == 'buy') & (indicator < upperband):
                 action_side = 'buy'
-            elif (action_list[-1] == 'buy') & (check_series[signal] >= config_params[symbol_type][objective][timeframe][signal]['overbought']):
+            elif (action_list[-1] == 'buy') & (indicator >= upperband):
                 action_side = 'sell'
-            elif (action_list[-1] == 'sell') & (check_series[signal] > config_params[symbol_type][objective][timeframe][signal]['oversold']):
+            elif (action_list[-1] == 'sell') & (indicator > lowerband):
                 action_side = 'sell'
-            elif (action_list[-1] == 'sell') & (check_series[signal] <= config_params[symbol_type][objective][timeframe][signal]['oversold']):
+            elif (action_list[-1] == 'sell') & (indicator <= lowerband):
                 action_side = 'buy'
             else:
                 action_side = 'no_action'
