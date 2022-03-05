@@ -1,4 +1,3 @@
-import numpy as np
 import pandas as pd
 import datetime as dt
 from dateutil import tz
@@ -87,69 +86,69 @@ def group_timeframe(ohlcv_df, step):
 
     grouped_ohlcv_df = pd.DataFrame(ohlcv_dict)
     
-    return grouped_ohlcv_df    
+    return grouped_ohlcv_df
 
 
-def get_stop_side(stop_key, side):
-    if ((stop_key == 'tp') & (side == 'buy')) | ((stop_key == 'sl') &(side == 'sell')):
-        stop_side = 'upper'
-    elif ((stop_key == 'tp') & (side == 'sell')) | ((stop_key == 'sl') & (side == 'buy')):
-        stop_side = 'lower'
-
-    return stop_side
+def gen_action_time_list(config_params, ohlcv_df_dict):
+    temp_df = ohlcv_df_dict['base'][config_params['action_timeframe']][config_params['base']['symbol'][0]]
+    action_time_list = temp_df['time'].to_list()[1:]
+    
+    return action_time_list
 
 
-def get_stop_price_percent(stop_key, stop_side, open_price, stop_price_list, config_params):
-    if config_params[stop_key]['price_percent'] != None:
-        if stop_side == 'upper':
-            price_percent_stop_price = open_price * (1 + (config_params[stop_key]['price_percent'] / 100))
-        elif stop_side == 'lower':
-            price_percent_stop_price = open_price * (1 - (config_params[stop_key]['price_percent'] / 100))
+def get_timeframe_list(symbol_type, config_params):
+    open_timeframe_list = list(config_params[symbol_type]['open'].keys())
+    close_timeframe_list = list(config_params[symbol_type]['close'].keys())
+    timeframe_list = open_timeframe_list + close_timeframe_list
 
-        stop_price_list.append(price_percent_stop_price)
-
-    return stop_price_list
-
-
-def get_stop_price_signal(stop_key, stop_side, symbol, signal_time, stop_price_list, ohlcv_df_dict, config_params):
-    if config_params[stop_key]['signal'] != None:
-        ohlcv_df = ohlcv_df_dict['base'][config_params[stop_key]['signal']['timeframe']][symbol]
-        check_df = ohlcv_df[ohlcv_df['time'] <= signal_time]
-        check_series = check_df.loc[len(check_df) - 1, :]
-
-        signal = list(config_params[stop_key]['signal']['signal'].keys())[0]
-
-        if (stop_side == 'upper') & (check_series[signal] > check_series['close']) | (stop_side == 'lower') & (check_series[signal] < check_series['close']):
-            stop_price_list.append(check_series[signal])
-
-    return stop_price_list
-
-
-def get_stop_price(stop_key, side, symbol, signal_time, open_price, ohlcv_df_dict, config_params):
-    stop_price_list = []
-
-    stop_side = get_stop_side(stop_key, side)
-    stop_price_list = get_stop_price_percent(stop_key, stop_side, open_price, stop_price_list, config_params)
-    stop_price_list = get_stop_price_signal(stop_key, stop_side, symbol, signal_time, stop_price_list, ohlcv_df_dict, config_params)
-
-    if (stop_side == 'upper') & (len(stop_price_list) > 0):
-        stop_price = min(stop_price_list)
-    elif (stop_side == 'lower') & (len(stop_price_list) > 0):
-        stop_price = max(stop_price_list)
-    elif (stop_side == 'upper') & (len(stop_price_list) == 0):
-        stop_price = np.inf
-    elif (stop_side == 'lower') & (len(stop_price_list) == 0):
-        stop_price = 0
-
-    return stop_price
-
-
-def update_stop_price(side, symbol, signal_time, config_params, position_dict, ohlcv_df_dict):
     for stop_key in ['tp', 'sl']:
-        stop_price = get_stop_price(stop_key, side, symbol, signal_time, position_dict[symbol]['open_price'], ohlcv_df_dict, config_params)
-            
-        if position_dict[symbol][stop_key] != stop_price:
-            position_dict[symbol][stop_key] = stop_price
-            print(f"     Update {stop_key}: {stop_price}")
+        if (symbol_type == 'base') & (config_params[stop_key]['signal'] != None):
+            stop_timeframe = config_params[stop_key]['signal']['timeframe']
+            timeframe_list += [stop_timeframe]
+        
+    timeframe_list = list(set(timeframe_list))
 
-    return position_dict
+    return timeframe_list
+
+
+def get_data(exchange, start_date, end_date, start_hour, interval_dict, config_params):
+    ohlcv_df_dict = {
+        'base': {},
+        'lead': {}
+        }
+    
+    for symbol_type in ['base', 'lead']:
+        symbol_list = config_params[symbol_type]['symbol']
+        timeframe_list = get_timeframe_list(symbol_type, config_params)
+
+        timeframe_count = 1
+        for timeframe in timeframe_list:
+            ohlcv_df_dict[symbol_type][timeframe] = {}
+            fetch_timeframe, step = get_fetch_timeframe(timeframe, interval_dict)
+            limit = int((24 * 60) / interval_dict[fetch_timeframe])
+            
+            safety_start_dt = start_date - dt.timedelta(minutes=(interval_dict[timeframe] * step * config_params['safety_ohlcv_range']))
+            date_list = pd.date_range(safety_start_dt, end_date, freq='d').to_list()
+            
+            symbol_count = 1
+            for symbol in symbol_list:
+                ohlcv_df = pd.DataFrame()
+                
+                date_count = 1
+                for date in date_list:
+                    since = get_unix_datetime(date, start_hour)
+                    temp_df = get_ohlcv_df(exchange, symbol, fetch_timeframe, since, limit)
+                    ohlcv_df = pd.concat([ohlcv_df, temp_df])
+                    
+                    print(f"{symbol_type}: timeframe {timeframe_count}/{len(timeframe_list)} symbol {symbol_count}/{len(symbol_list)} date {date_count}/{len(date_list)}")
+                    date_count += 1
+                
+                if step > 1:
+                    ohlcv_df = group_timeframe(ohlcv_df, step)
+                    
+                ohlcv_df_dict[symbol_type][timeframe][symbol] = ohlcv_df.reset_index(drop=True)
+                symbol_count += 1
+                
+            timeframe_count += 1
+
+    return ohlcv_df_dict
