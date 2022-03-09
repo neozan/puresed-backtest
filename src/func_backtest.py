@@ -2,7 +2,6 @@ import numpy as np
 import pandas as pd
 import datetime as dt
 
-from func_get import get_unix_datetime, get_fetch_timeframe, get_ohlcv_df, group_timeframe
 from func_signal import add_sma, add_ema, add_tma, add_bollinger, add_supertrend, add_wt, add_rsi, add_donchian, add_hull
 
 
@@ -166,15 +165,39 @@ def get_open_position_flag(symbol, signal_time, max_open_timeframe, config_param
     return open_position_flag, side
 
 
+def get_tp_flag(symbol, side, current_ohlcv_df, position_dict):
+    if (side == 'buy') & (current_ohlcv_df.loc[0, 'high'] >= position_dict[symbol]['tp']):
+        tp_flag = True
+    elif (side == 'sell') & (current_ohlcv_df.loc[0, 'low'] <= position_dict[symbol]['tp']):
+        tp_flag = True
+    else:
+        tp_flag = False
+
+    return tp_flag
+
+
+def get_sl_flag(symbol, side, current_ohlcv_df, position_dict):
+    if (side == 'buy') & (current_ohlcv_df.loc[0, 'low'] <= position_dict[symbol]['sl']):
+        sl_flag = True
+    elif (side == 'sell') & (current_ohlcv_df.loc[0, 'high'] >= position_dict[symbol]['sl']):
+        sl_flag = True
+    else:
+        sl_flag = False
+
+    return sl_flag
+
+
 def get_close_position_flag(symbol, side, signal_time, config_params, current_ohlcv_df, ohlcv_df_dict, position_dict):
-    if ((side == 'buy') & (current_ohlcv_df.loc[0, 'high'] >= position_dict[symbol]['tp'])) | ((side == 'sell') & (current_ohlcv_df.loc[0, 'low'] <= position_dict[symbol]['tp'])):
+    if (position_dict[symbol]['stop_count'] == 0) & (get_tp_flag(symbol, side, current_ohlcv_df, position_dict) == True):
         close_position_flag = True
         close_price = position_dict[symbol]['tp']
-        print(f"     Closed by tp at {close_price}")
-    elif ((side == 'buy') & (current_ohlcv_df.loc[0, 'low'] <= position_dict[symbol]['sl'])) | ((side == 'sell') & (current_ohlcv_df.loc[0, 'high'] >= position_dict[symbol]['sl'])):
+        close_percent = config_params['tp']['stop_percent']
+        print(f"     Take profit at {close_price}")
+    elif (position_dict[symbol]['stop_count'] == 0) & (get_sl_flag(symbol, side, current_ohlcv_df, position_dict) == True):
         close_position_flag = True
         close_price = position_dict[symbol]['sl']
-        print(f"     Closed by sl at {close_price}")
+        close_percent = config_params['sl']['stop_percent']
+        print(f"     Stop less at {close_price}")
     else:
         action_list = [side]
         action_list = get_action(symbol, 'close', action_list, signal_time, config_params, ohlcv_df_dict)
@@ -182,13 +205,15 @@ def get_close_position_flag(symbol, side, signal_time, config_params, current_oh
         if (len(set(action_list)) != 1) | (action_list[0] != position_dict[symbol]['side']):
             close_position_flag = True
             close_price = current_ohlcv_df.loc[0, 'close']
+            close_percent = 100
             print(f"     Closed by signal at {close_price}")
         else:
             close_position_flag = False
             close_price = None
+            close_percent = None
             print("     Not close")
 
-    return close_position_flag, close_price
+    return close_position_flag, close_price, close_percent
 
 
 def get_stop_side(stop_key, side):
@@ -255,7 +280,8 @@ def update_open_opsition(symbol, side, open_price, amount, tp_price, sl_price, s
         'amount': amount,
         'notional': amount * open_price,
         'tp': tp_price,
-        'sl': sl_price
+        'sl': sl_price,
+        'stop_count': 0
     }
 
     print(f"     {side}: {amount}")
@@ -266,27 +292,30 @@ def update_open_opsition(symbol, side, open_price, amount, tp_price, sl_price, s
     return position_dict
 
 
-def update_close_position(symbol, side, close_price, signal_time, config_params, budget, reinvest_profit_flag, position_dict, transaction_dict, interval_dict):
+def update_close_position(symbol, side, close_price, close_percent, signal_time, config_params, budget, reinvest_profit_flag, position_dict, transaction_dict, interval_dict):
     action_time = signal_time + dt.timedelta(minutes=interval_dict[config_params['action_timeframe']])
+
+    close_amount = position_dict[symbol]['amount'] * (close_percent / 100)
 
     transaction_dict['symbol'].append(symbol)
     transaction_dict['side'].append(side)
-    transaction_dict['amount'].append(position_dict[symbol]['amount'])
+    transaction_dict['amount'].append(close_amount)
     transaction_dict['open_time'].append(position_dict[symbol]['open_time'])
     transaction_dict['open_price'].append(position_dict[symbol]['open_price'])
     transaction_dict['close_time'].append(action_time)
     transaction_dict['close_price'].append(close_price)
+    transaction_dict['value'].append(position_dict[symbol]['open_price'] * close_amount)
     transaction_dict['notional'].append(position_dict[symbol]['notional'])
 
     if position_dict[symbol]['side'] == 'buy':
-        adjusted_open_price = position_dict[symbol]['open_price'] * (1 + (config_params['taker_fee'] / 100))
-        adjusted_close_price = close_price * (1 - (config_params['taker_fee'] / 100))
-        profit = (adjusted_close_price - adjusted_open_price) * position_dict[symbol]['amount']
+        adjusted_open_price = position_dict[symbol]['open_price'] * (1 + (config_params['taker_fee_percent'] / 100))
+        adjusted_close_price = close_price * (1 - (config_params['taker_fee_percent'] / 100))
+        profit = close_amount * (adjusted_close_price - adjusted_open_price)
         profit_percent = ((adjusted_close_price - adjusted_open_price) / adjusted_open_price) * 100
     elif position_dict[symbol]['side'] == 'sell':
-        adjusted_open_price = position_dict[symbol]['open_price'] * (1 - (config_params['taker_fee'] / 100))
-        adjusted_close_price = close_price * (1 + (config_params['taker_fee'] / 100))
-        profit = (adjusted_open_price - adjusted_close_price) * position_dict[symbol]['amount']
+        adjusted_open_price = position_dict[symbol]['open_price'] * (1 - (config_params['taker_fee_percent'] / 100))
+        adjusted_close_price = close_price * (1 + (config_params['taker_fee_percent'] / 100))
+        profit = close_amount * (adjusted_open_price - adjusted_close_price)
         profit_percent = ((adjusted_open_price - adjusted_close_price) / adjusted_open_price) * 100
 
     transaction_dict['profit'].append(profit)
@@ -295,7 +324,13 @@ def update_close_position(symbol, side, close_price, signal_time, config_params,
     if reinvest_profit_flag == True:
         budget += profit
 
-    del position_dict[symbol]
+    position_dict[symbol]['amount'] -= close_amount
+
+    if position_dict[symbol]['amount'] == 0:
+        del position_dict[symbol]
+    else:
+        position_dict[symbol]['notional'] -= (close_amount * position_dict[symbol]['open_price'])
+        position_dict[symbol]['stop_count'] = 1
 
     return budget, position_dict, transaction_dict
 
@@ -319,7 +354,7 @@ def open_position(symbol, signal_time, max_open_timeframe, config_params, budget
         current_ohlcv_df = ohlcv_df[ohlcv_df['time'] == signal_time].reset_index(drop=True)
         
         open_price = current_ohlcv_df.loc[0, 'close']
-        amount = (config_params['action_percent'] * budget) / open_price * config_params['leverage']
+        amount = ((config_params['action_percent'] / 100) * budget) / open_price * config_params['leverage']
         tp_price = get_stop_price('tp', side, symbol, signal_time, open_price, ohlcv_df_dict, config_params)
         sl_price = get_stop_price('sl', side, symbol, signal_time, open_price, ohlcv_df_dict, config_params)
 
@@ -333,11 +368,11 @@ def close_position(symbol, signal_time, max_drawdown, config_params, budget, rei
     ohlcv_df = ohlcv_df_dict['base'][config_params['action_timeframe']][symbol]
     current_ohlcv_df = ohlcv_df[ohlcv_df['time'] == signal_time].reset_index(drop=True)
     
-    close_position_flag, close_price = get_close_position_flag(symbol, side, signal_time, config_params, current_ohlcv_df, ohlcv_df_dict, position_dict)
+    close_position_flag, close_price, close_percent = get_close_position_flag(symbol, side, signal_time, config_params, current_ohlcv_df, ohlcv_df_dict, position_dict)
     max_drawdown = update_max_drawdown(symbol, side, close_price, max_drawdown, current_ohlcv_df, position_dict)
 
     if close_position_flag == True:
-        budget, position_dict, transaction_dict = update_close_position(symbol, side, close_price, signal_time, config_params, budget, reinvest_profit_flag, position_dict, transaction_dict, interval_dict)
+        budget, position_dict, transaction_dict = update_close_position(symbol, side, close_price, close_percent, signal_time, config_params, budget, reinvest_profit_flag, position_dict, transaction_dict, interval_dict)
     else:
         position_dict = update_stop_price(side, symbol, signal_time, config_params, position_dict, ohlcv_df_dict)
 
