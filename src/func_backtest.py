@@ -1,5 +1,4 @@
 import numpy as np
-import pandas as pd
 import datetime as dt
 
 from func_signal import add_sma, add_ema, add_tma, add_bollinger, add_supertrend, add_wt, add_rsi, add_donchian, add_hull

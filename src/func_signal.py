@@ -30,6 +30,102 @@ def revert_signal(action_side):
         action_side = 'buy'
 
     return action_side
+
+
+def check_signal_side(objective, symbol_type, time, signal, action_list, ohlcv_df, timeframe, config_params):
+    check_df = ohlcv_df[ohlcv_df['time'] <= time].reset_index(drop=True)
+    check_series = check_df.loc[len(check_df) - 1, :]
+    
+    action_side = check_series[f'{signal}_side']
+
+    if config_params[symbol_type][objective][timeframe][signal]['revert'] == True:
+        action_side = revert_signal(action_side)
+    
+    action_list.append(action_side)
+    return action_side
+
+
+def check_signal_side_change(objective, symbol_type, time, signal, action_list, ohlcv_df, timeframe, config_params):
+    look_back = config_params[symbol_type][objective][timeframe][signal]['look_back']
+
+    if look_back > 0:
+        check_df = ohlcv_df[ohlcv_df['time'] <= time]
+        check_df = check_df.loc[len(check_df) - look_back - 1:].reset_index(drop=True)
+        
+        if len(check_df) < look_back + 1:
+            action_side = 'no_action'
+        else:
+            action_side_unique = check_df.loc[:len(check_df) - 1, f'{signal}_side'].unique()
+            if len(action_side_unique) == 1:
+                action_side = action_side_unique[0]
+            else:
+                action_side = 'no_action' if objective == 'open' else check_df.loc[len(check_df) - 1, f'{signal}_side']
+            
+        if config_params[symbol_type][objective][timeframe][signal]['revert'] == True:
+            action_side = revert_signal(action_side)
+
+        action_list.append(action_side)
+        return action_side
+
+
+def check_signal_band(objective, symbol_type, time, signal, action_list, ohlcv_df, timeframe, config_params):
+    def cal_outer_band(indicator, upperband, lowerband):
+        if indicator <= lowerband:
+            action_side = 'buy'
+        elif indicator >= upperband:
+            action_side = 'sell'
+        else:
+            action_side = 'no_action'
+
+        return action_side
+
+
+    def cal_inner_band(action_list, indicator, upperband, lowerband):
+        if (len(action_list) >= 1):
+            if (action_list[-1] == 'buy') & (indicator < upperband):
+                action_side = 'buy'
+            elif (action_list[-1] == 'buy') & (indicator >= upperband):
+                action_side = 'sell'
+            elif (action_list[-1] == 'sell') & (indicator > lowerband):
+                action_side = 'sell'
+            elif (action_list[-1] == 'sell') & (indicator <= lowerband):
+                action_side = 'buy'
+            else:
+                action_side = 'no_action'
+        else:
+            raise ValueError("Must be used with other signals")
+
+        return action_side
+
+
+    check_df = ohlcv_df[ohlcv_df['time'] <= time].reset_index(drop=True)
+    check_series = check_df.loc[len(check_df) - 1, :]
+
+    band_type_dict = {
+        'signal': ['rsi', 'wt'],
+        'price': ['bollinger']
+    }
+
+    if signal in band_type_dict['signal']:
+        indicator = check_series[signal]
+        upperband = config_params[symbol_type][objective][timeframe][signal]['overbought']
+        lowerband = config_params[symbol_type][objective][timeframe][signal]['oversold']
+    elif signal in band_type_dict['price']:
+        indicator = check_series['close']
+        upperband = check_series[f'{signal}_upper']
+        lowerband = check_series[f'{signal}_lower']
+    
+    if config_params[symbol_type][objective][timeframe][signal]['trigger'] == 'outer':
+        action_side = cal_outer_band(indicator, upperband, lowerband)
+    
+    elif config_params[symbol_type][objective][timeframe][signal]['trigger'] == 'inner':
+        action_side = cal_inner_band(action_list, indicator, upperband, lowerband)
+
+    if config_params[symbol_type][objective][timeframe][signal]['revert'] == True:
+        action_side = revert_signal(action_side)
+        
+    action_list.append(action_side)
+    return action_side
     
 
 def add_sma(objective, ohlcv_df, timeframe, config_params):
@@ -320,98 +416,3 @@ def add_hull(objective, ohlcv_df, timeframe, config_params):
     ohlcv_df['hull_side'] = hull_side_list
     
     return ohlcv_df
-
-
-def check_signal_side(objective, symbol_type, time, signal, action_list, ohlcv_df, timeframe, config_params):
-    check_df = ohlcv_df[ohlcv_df['time'] <= time].reset_index(drop=True)
-    check_series = check_df.loc[len(check_df) - 1, :]
-    
-    action_side = check_series[f'{signal}_side']
-
-    if config_params[symbol_type][objective][timeframe][signal]['revert'] == True:
-        action_side = revert_signal(action_side)
-    
-    action_list.append(action_side)
-    return action_side
-
-
-def check_signal_side_change(objective, symbol_type, time, signal, action_list, ohlcv_df, timeframe, config_params):
-    look_back = config_params[symbol_type][objective][timeframe][signal]['look_back']
-
-    if look_back > 0:
-        check_df = ohlcv_df[ohlcv_df['time'] <= time]
-        check_df = check_df.loc[len(check_df) - look_back - 1:].reset_index(drop=True)
-        
-        if len(check_df) >= look_back + 1:
-            if check_df.loc[0, f'{signal}_side'] != check_df.loc[len(check_df) - 1, f'{signal}_side']:
-                action_side = check_df.loc[len(check_df) - 1, f'{signal}_side']
-            else:
-                action_side = 'no_action' if objective == 'open' else check_df.loc[len(check_df) - 1, f'{signal}_side']
-        else:
-            action_side = 'no_action'
-
-        if config_params[symbol_type][objective][timeframe][signal]['revert'] == True:
-            action_side = revert_signal(action_side)
-
-        action_list.append(action_side)
-        return action_side
-
-
-def check_signal_band(objective, symbol_type, time, signal, action_list, ohlcv_df, timeframe, config_params):
-    def cal_outer_band(indicator, upperband, lowerband):
-        if indicator <= lowerband:
-            action_side = 'buy'
-        elif indicator >= upperband:
-            action_side = 'sell'
-        else:
-            action_side = 'no_action'
-
-        return action_side
-
-
-    def cal_inner_band(action_list, indicator, upperband, lowerband):
-        if (len(action_list) >= 1):
-            if (action_list[-1] == 'buy') & (indicator < upperband):
-                action_side = 'buy'
-            elif (action_list[-1] == 'buy') & (indicator >= upperband):
-                action_side = 'sell'
-            elif (action_list[-1] == 'sell') & (indicator > lowerband):
-                action_side = 'sell'
-            elif (action_list[-1] == 'sell') & (indicator <= lowerband):
-                action_side = 'buy'
-            else:
-                action_side = 'no_action'
-        else:
-            raise ValueError("Must be used with other signals")
-
-        return action_side
-
-
-    check_df = ohlcv_df[ohlcv_df['time'] <= time].reset_index(drop=True)
-    check_series = check_df.loc[len(check_df) - 1, :]
-
-    band_type_dict = {
-        'signal': ['rsi', 'wt'],
-        'price': ['bollinger']
-    }
-
-    if signal in band_type_dict['signal']:
-        indicator = check_series[signal]
-        upperband = config_params[symbol_type][objective][timeframe][signal]['overbought']
-        lowerband = config_params[symbol_type][objective][timeframe][signal]['oversold']
-    elif signal in band_type_dict['price']:
-        indicator = check_series['close']
-        upperband = check_series[f'{signal}_upper']
-        lowerband = check_series[f'{signal}_lower']
-    
-    if config_params[symbol_type][objective][timeframe][signal]['trigger'] == 'outer':
-        action_side = cal_outer_band(indicator, upperband, lowerband)
-    
-    elif config_params[symbol_type][objective][timeframe][signal]['trigger'] == 'inner':
-        action_side = cal_inner_band(action_list, indicator, upperband, lowerband)
-
-    if config_params[symbol_type][objective][timeframe][signal]['revert'] == True:
-        action_side = revert_signal(action_side)
-        
-    action_list.append(action_side)
-    return action_side
