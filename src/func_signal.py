@@ -23,6 +23,17 @@ def get_signal_side(ohlcv_df, signal):
     return signal_side
 
 
+def get_signal_cross_side(ohlcv_df, signal):
+    if ohlcv_df[f'short_{signal}'] > ohlcv_df[f'long_{signal}']:
+        signal_side = 'buy'
+    elif ohlcv_df[f'short_{signal}'] < ohlcv_df[f'long_{signal}']:
+        signal_side = 'sell'
+    else:
+        signal_side = None
+        
+    return signal_side
+
+
 def revert_signal(action_side):
     if action_side == 'buy':
         action_side = 'sell'
@@ -127,37 +138,27 @@ def check_signal_band(objective, symbol_type, time, signal, action_list, ohlcv_d
         
     action_list.append(action_side)
     return action_side
-    
 
-def add_sma(objective, ohlcv_df, timeframe, config_params):
-    signal_dict = get_signal_dict('sma', objective, timeframe, config_params)
-    windows = signal_dict['windows']
-    
+
+def cal_sma(ohlcv_df, windows, signal):
     temp_df = ohlcv_df.copy()
 
     sma_list = temp_df['close'].rolling(window=windows).mean()
-    ohlcv_df['sma'] = sma_list
-    ohlcv_df['sma_side'] = ohlcv_df.apply(get_signal_side, signal='sma', axis=1)
-    
+    ohlcv_df[signal] = sma_list
+
     return ohlcv_df
 
 
-def add_ema(objective, ohlcv_df, timeframe, config_params):
-    signal_dict = get_signal_dict('ema', objective, timeframe, config_params)
-    windows = signal_dict['windows']
-    
+def cal_ema(ohlcv_df, windows, signal):
     temp_df = ohlcv_df.copy()
 
     ema_list = temp_df['close'].ewm(span=windows, adjust=False).mean()
-    ohlcv_df['ema'] = ema_list
-    ohlcv_df['ema_side'] = ohlcv_df.apply(get_signal_side, signal='ema', axis=1)
-    
+    ohlcv_df[signal] = ema_list
+
     return ohlcv_df
 
 
-def add_tma(objective, ohlcv_df, timeframe, config_params):
-    signal_dict = get_signal_dict('tma', objective, timeframe, config_params)
-    windows = signal_dict['windows']
+def cal_tma(ohlcv_df, windows, signal):
     sub_interval = (windows + 1) / 2
 
     temp_df = ohlcv_df.copy()
@@ -166,8 +167,73 @@ def add_tma(objective, ohlcv_df, timeframe, config_params):
     temp_df['ma'] = sma_list
     
     tma_list = temp_df['ma'].rolling(window=int(np.round(sub_interval))).mean()
-    ohlcv_df['tma'] = tma_list
+    ohlcv_df[signal] = tma_list
+
+    return ohlcv_df
+
+
+def add_sma(objective, ohlcv_df, timeframe, config_params):
+    signal_dict = get_signal_dict('sma', objective, timeframe, config_params)
+    windows = signal_dict['windows']
+    
+    ohlcv_df = cal_sma(ohlcv_df, windows, signal='sma')
+    ohlcv_df[f'sma_side'] = ohlcv_df.apply(get_signal_side, signal='sma', axis=1)
+    
+    return ohlcv_df
+
+
+def add_ema(objective, ohlcv_df, timeframe, config_params):
+    signal_dict = get_signal_dict('ema', objective, timeframe, config_params)
+    windows = signal_dict['windows']
+    
+    ohlcv_df = cal_ema(ohlcv_df, windows, signal='ema')
+    ohlcv_df['ema_side'] = ohlcv_df.apply(get_signal_side, signal='ema', axis=1)
+    
+    return ohlcv_df
+
+
+def add_tma(objective, ohlcv_df, timeframe, config_params):
+    signal_dict = get_signal_dict('tma', objective, timeframe, config_params)
+    windows = signal_dict['windows']
+
+    ohlcv_df = cal_tma(ohlcv_df, windows, signal='tma')
     ohlcv_df['tma_side'] = ohlcv_df.apply(get_signal_side, signal='tma', axis=1)
+    
+    return ohlcv_df
+
+
+def add_cross_sma(objective, ohlcv_df, timeframe, config_params):
+    signal_dict = get_signal_dict('cross_sma', objective, timeframe, config_params)
+    short_windows = signal_dict['short_windows']
+    long_windows = signal_dict['long_windows']
+    
+    ohlcv_df = cal_sma(ohlcv_df, short_windows, signal='short_sma')
+    ohlcv_df = cal_sma(ohlcv_df, long_windows, signal='long_sma')
+    ohlcv_df['cross_sma_side'] = ohlcv_df.apply(get_signal_cross_side, signal='sma', axis=1)
+    
+    return ohlcv_df
+
+
+def add_cross_ema(objective, ohlcv_df, timeframe, config_params):
+    signal_dict = get_signal_dict('cross_ema', objective, timeframe, config_params)
+    short_windows = signal_dict['short_windows']
+    long_windows = signal_dict['long_windows']
+
+    ohlcv_df = cal_ema(ohlcv_df, short_windows, signal='short_ema')
+    ohlcv_df = cal_ema(ohlcv_df, long_windows, signal='long_ema')
+    ohlcv_df['cross_ema_side'] = ohlcv_df.apply(get_signal_cross_side, signal='ema', axis=1)
+    
+    return ohlcv_df
+
+
+def add_cross_tma(objective, ohlcv_df, timeframe, config_params):
+    signal_dict = get_signal_dict('cross_tma', objective, timeframe, config_params)
+    short_windows = signal_dict['short_windows']
+    long_windows = signal_dict['long_windows']
+    
+    ohlcv_df = cal_tma(ohlcv_df, short_windows, signal='short_tma')
+    ohlcv_df = cal_tma(ohlcv_df, long_windows, signal='long_tma')
+    ohlcv_df['cross_tma_side'] = ohlcv_df.apply(get_signal_cross_side, signal='tma', axis=1)
     
     return ohlcv_df
 

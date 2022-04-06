@@ -1,7 +1,7 @@
 import numpy as np
 import datetime as dt
 
-from func_signal import add_sma, add_ema, add_tma, add_bollinger, add_supertrend, add_wt, add_rsi, add_donchian, add_hull
+from func_signal import add_sma, add_ema, add_tma, add_cross_sma, add_cross_ema, add_cross_tma, add_bollinger, add_supertrend, add_wt, add_rsi, add_donchian, add_hull
 
 
 def add_action_signal(ohlcv_df_dict, func_add_dict, config_params):
@@ -56,6 +56,9 @@ def add_signal(start_date, ohlcv_df_dict, interval_dict, config_params):
         'sma': add_sma,
         'ema': add_ema,
         'tma': add_tma,
+        'cross_sma': add_cross_sma,
+        'cross_ema': add_cross_ema,
+        'cross_tma': add_cross_tma,
         'bollinger': add_bollinger,
         'supertrend': add_supertrend,
         'wt': add_wt,
@@ -196,7 +199,7 @@ def get_close_position_flag(symbol, side, signal_time, config_params, current_oh
         close_position_flag = True
         close_price = position_dict[symbol]['sl']
         close_percent = config_params['sl']['stop_percent']
-        print(f"     Stop less at {close_price}")
+        print(f"     Stop loss at {close_price}")
     else:
         action_list = [side]
         action_list = get_action(symbol, 'close', action_list, signal_time, config_params, ohlcv_df_dict)
