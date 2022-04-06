@@ -55,8 +55,9 @@ def check_signal_side_change(objective, symbol_type, time, signal, action_list, 
         if len(check_df) < look_back + 1:
             action_side = 'no_action'
         else:
-            action_side_unique = check_df.loc[:len(check_df) - 1, f'{signal}_side'].unique()
-            if len(action_side_unique) == 1:
+            action_side_first = check_df.loc[0, f'{signal}_side']
+            action_side_unique = check_df.loc[1:len(check_df) - 1, f'{signal}_side'].unique()
+            if (len(action_side_unique) == 1) & (action_side_first != action_side_unique[0]):
                 action_side = action_side_unique[0]
             else:
                 action_side = 'no_action' if objective == 'open' else check_df.loc[len(check_df) - 1, f'{signal}_side']
