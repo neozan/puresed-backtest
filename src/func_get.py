@@ -43,7 +43,7 @@ def get_fetch_timeframe(action_timeframe, interval_dict):
 
     inverse_fetch_interval_dict = {v: k for k, v in fetch_interval_dict.items()}
 
-    fetch_interval_list = list(inverse_fetch_interval_dict.keys())
+    fetch_interval_list = list(inverse_fetch_interval_dict)
     fetch_interval_list.sort(reverse=True)
 
     for fetch_interval in fetch_interval_list:
@@ -97,8 +97,8 @@ def gen_action_time_list(config_params, ohlcv_df_dict):
 
 
 def get_timeframe_list(symbol_type, config_params):
-    open_timeframe_list = list(config_params[symbol_type]['open'].keys())
-    close_timeframe_list = list(config_params[symbol_type]['close'].keys())
+    open_timeframe_list = list(config_params[symbol_type]['open'])
+    close_timeframe_list = list(config_params[symbol_type]['close'])
     timeframe_list = open_timeframe_list + close_timeframe_list
 
     for stop_key in ['tp', 'sl']:

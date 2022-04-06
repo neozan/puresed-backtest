@@ -6,13 +6,13 @@ from func_signal import add_sma, add_ema, add_tma, add_bollinger, add_supertrend
 
 def add_action_signal(ohlcv_df_dict, func_add_dict, config_params):
     for symbol_type in ['base', 'lead']:
-        for timeframe in ohlcv_df_dict[symbol_type].keys():
-            for symbol in ohlcv_df_dict[symbol_type][timeframe].keys():
+        for timeframe in ohlcv_df_dict[symbol_type]:
+            for symbol in ohlcv_df_dict[symbol_type][timeframe]:
                 ohlcv_df = ohlcv_df_dict[symbol_type][timeframe][symbol]
                 
                 for objective in ['open', 'close']:
-                    if timeframe in config_params[symbol_type][objective].keys():
-                        for signal in config_params[symbol_type][objective][timeframe].keys():
+                    if timeframe in config_params[symbol_type][objective]:
+                        for signal in config_params[symbol_type][objective][timeframe]:
                             if signal not in ohlcv_df.columns:
                                 print(f"{symbol_type} add {signal} to {symbol} {timeframe}")
                                 ohlcv_df = func_add_dict[signal](objective, ohlcv_df, timeframe, config_params)
@@ -25,9 +25,9 @@ def add_action_signal(ohlcv_df_dict, func_add_dict, config_params):
 def add_stop_signal(ohlcv_df_dict, func_add_dict, config_params):
     for objective in ['tp', 'sl']:
         if (config_params[objective]['signal'] != None):
-            for symbol in ohlcv_df_dict['base'][config_params[objective]['signal']['timeframe']].keys():
+            for symbol in ohlcv_df_dict['base'][config_params[objective]['signal']['timeframe']]:
                 ohlcv_df = ohlcv_df_dict['base'][config_params[objective]['signal']['timeframe']][symbol]
-                signal = list(config_params[objective]['signal']['signal'].keys())[0]
+                signal = list(config_params[objective]['signal']['signal'])[0]
                 timeframe = config_params[objective]['signal']['timeframe']
 
                 if signal not in ohlcv_df.columns:
@@ -40,8 +40,8 @@ def add_stop_signal(ohlcv_df_dict, func_add_dict, config_params):
 
 def filter_start_time(start_date, ohlcv_df_dict, interval_dict):
     for symbol_type in ['base', 'lead']:
-        for timeframe in ohlcv_df_dict[symbol_type].keys():
-            for symbol in ohlcv_df_dict[symbol_type][timeframe].keys():
+        for timeframe in ohlcv_df_dict[symbol_type]:
+            for symbol in ohlcv_df_dict[symbol_type][timeframe]:
                 ohlcv_df = ohlcv_df_dict[symbol_type][timeframe][symbol]
                 
                 first_signal_time = start_date - dt.timedelta(minutes=interval_dict[timeframe])
@@ -86,10 +86,10 @@ def update_max_drawdown(symbol, side, close_price, max_drawdown, ohlcv_df, posit
 
 
 def get_action_base(symbol, objective, action_list, signal_time, config_params, ohlcv_df_dict):
-    for timeframe in config_params['base'][objective].keys():
+    for timeframe in config_params['base'][objective]:
         base_ohlcv_df = ohlcv_df_dict['base'][timeframe][symbol]
 
-        for signal in config_params['base'][objective][timeframe].keys():
+        for signal in config_params['base'][objective][timeframe]:
             for func_check in config_params['base'][objective][timeframe][signal]['check']:
                 action_side = func_check(objective, 'base', signal_time, signal, action_list, base_ohlcv_df, timeframe, config_params)
                 func_name = str(func_check).split(' ')[1]
@@ -99,11 +99,11 @@ def get_action_base(symbol, objective, action_list, signal_time, config_params, 
 
 
 def get_action_lead(objective, action_list, signal_time, config_params, ohlcv_df_dict):
-    for timeframe in config_params['lead'][objective].keys():
+    for timeframe in config_params['lead'][objective]:
         for lead_symbol in config_params['lead']['symbol']:
             lead_ohlcv_df = ohlcv_df_dict['lead'][timeframe][lead_symbol]
 
-            for signal in config_params['lead'][objective][timeframe].keys():
+            for signal in config_params['lead'][objective][timeframe]:
                 for func_check in config_params['lead'][objective][timeframe][signal]['check']:
                     action_side = func_check(objective, 'lead', signal_time, signal, action_list, lead_ohlcv_df, timeframe, config_params)
                     func_name = str(func_check).split(' ')[1]
@@ -120,7 +120,7 @@ def get_action(symbol, objective, action_list, signal_time, config_params, ohlcv
 
 
 def get_max_open_timeframe(config_params, interval_dict):
-    timeframe_list = list(config_params['base']['open'].keys())
+    timeframe_list = list(config_params['base']['open'])
     interval_list = [interval_dict[timeframe] for timeframe in timeframe_list]
     max_interval = max(interval_list)
     
@@ -145,7 +145,7 @@ def get_available_data_flag(symbol, signal_time, max_open_timeframe, ohlcv_df_di
 def get_open_position_flag(symbol, signal_time, max_open_timeframe, config_params, ohlcv_df_dict):
     available_data_flag = get_available_data_flag(symbol, signal_time, max_open_timeframe, ohlcv_df_dict)    
     
-    if available_data_flag == True:
+    if available_data_flag:
         action_list = []
         action_list = get_action(symbol, 'open', action_list, signal_time, config_params, ohlcv_df_dict)
 
@@ -187,12 +187,12 @@ def get_sl_flag(symbol, side, current_ohlcv_df, position_dict):
 
 
 def get_close_position_flag(symbol, side, signal_time, config_params, current_ohlcv_df, ohlcv_df_dict, position_dict):
-    if (position_dict[symbol]['stop_count'] == 0) & (get_tp_flag(symbol, side, current_ohlcv_df, position_dict) == True):
+    if (position_dict[symbol]['stop_count'] == 0) & (get_tp_flag(symbol, side, current_ohlcv_df, position_dict)):
         close_position_flag = True
         close_price = position_dict[symbol]['tp']
         close_percent = config_params['tp']['stop_percent']
         print(f"     Take profit at {close_price}")
-    elif (position_dict[symbol]['stop_count'] == 0) & (get_sl_flag(symbol, side, current_ohlcv_df, position_dict) == True):
+    elif (position_dict[symbol]['stop_count'] == 0) & (get_sl_flag(symbol, side, current_ohlcv_df, position_dict)):
         close_position_flag = True
         close_price = position_dict[symbol]['sl']
         close_percent = config_params['sl']['stop_percent']
@@ -242,7 +242,7 @@ def get_stop_price_signal(stop_key, stop_side, symbol, signal_time, stop_price_l
         check_df = ohlcv_df[ohlcv_df['time'] <= signal_time]
         check_series = check_df.loc[len(check_df) - 1, :]
 
-        signal = list(config_params[stop_key]['signal']['signal'].keys())[0]
+        signal = list(config_params[stop_key]['signal']['signal'])[0]
 
         if (stop_side == 'upper') & (check_series[signal] > check_series['close']) | (stop_side == 'lower') & (check_series[signal] < check_series['close']):
             stop_price_list.append(check_series[signal])
@@ -320,7 +320,7 @@ def update_close_position(symbol, side, close_price, close_percent, signal_time,
     transaction_dict['profit'].append(profit)
     transaction_dict['profit_percent'].append(profit_percent)
     
-    if reinvest_profit_flag == True:
+    if reinvest_profit_flag:
         budget += profit
 
     position_dict[symbol]['amount'] -= close_amount
@@ -348,7 +348,7 @@ def update_stop_price(side, symbol, signal_time, config_params, position_dict, o
 def open_position(symbol, signal_time, max_open_timeframe, config_params, budget, ohlcv_df_dict, position_dict, interval_dict):
     open_position_flag, side = get_open_position_flag(symbol, signal_time, max_open_timeframe, config_params, ohlcv_df_dict)
 
-    if open_position_flag == True:
+    if open_position_flag:
         ohlcv_df = ohlcv_df_dict['base'][config_params['action_timeframe']][symbol]
         current_ohlcv_df = ohlcv_df[ohlcv_df['time'] == signal_time].reset_index(drop=True)
         
@@ -370,7 +370,7 @@ def close_position(symbol, signal_time, max_drawdown, config_params, budget, rei
     close_position_flag, close_price, close_percent = get_close_position_flag(symbol, side, signal_time, config_params, current_ohlcv_df, ohlcv_df_dict, position_dict)
     max_drawdown = update_max_drawdown(symbol, side, close_price, max_drawdown, current_ohlcv_df, position_dict)
 
-    if close_position_flag == True:
+    if close_position_flag:
         budget, position_dict, transaction_dict = update_close_position(symbol, side, close_price, close_percent, signal_time, config_params, budget, reinvest_profit_flag, position_dict, transaction_dict, interval_dict)
     else:
         position_dict = update_stop_price(side, symbol, signal_time, config_params, position_dict, ohlcv_df_dict)

@@ -38,7 +38,7 @@ def check_signal_side(objective, symbol_type, time, signal, action_list, ohlcv_d
     
     action_side = check_series[f'{signal}_side']
 
-    if config_params[symbol_type][objective][timeframe][signal]['revert'] == True:
+    if config_params[symbol_type][objective][timeframe][signal]['revert']:
         action_side = revert_signal(action_side)
     
     action_list.append(action_side)
@@ -62,7 +62,7 @@ def check_signal_side_change(objective, symbol_type, time, signal, action_list, 
             else:
                 action_side = 'no_action' if objective == 'open' else check_df.loc[len(check_df) - 1, f'{signal}_side']
             
-        if config_params[symbol_type][objective][timeframe][signal]['revert'] == True:
+        if config_params[symbol_type][objective][timeframe][signal]['revert']:
             action_side = revert_signal(action_side)
 
         action_list.append(action_side)
@@ -122,7 +122,7 @@ def check_signal_band(objective, symbol_type, time, signal, action_list, ohlcv_d
     elif config_params[symbol_type][objective][timeframe][signal]['trigger'] == 'inner':
         action_side = cal_inner_band(action_list, indicator, upperband, lowerband)
 
-    if config_params[symbol_type][objective][timeframe][signal]['revert'] == True:
+    if config_params[symbol_type][objective][timeframe][signal]['revert']:
         action_side = revert_signal(action_side)
         
     action_list.append(action_side)
