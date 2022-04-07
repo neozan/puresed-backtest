@@ -152,7 +152,7 @@ def get_open_position_flag(symbol, signal_time, max_open_timeframe, config_param
         action_list = []
         action_list = get_action(symbol, 'open', action_list, signal_time, config_params, ohlcv_df_dict)
 
-        if (len(set(action_list)) == 1) & (action_list[0] != 'no_action'):
+        if (len(set(action_list)) == 1) & (action_list[0] in config_params['target_side']) & (action_list[0] != 'no_action'):
             open_position_flag = True
             side = action_list[0]
         else:
