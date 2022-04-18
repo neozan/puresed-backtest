@@ -1,77 +1,7 @@
 import numpy as np
 import datetime as dt
 
-from func_signal import add_sma, add_ema, add_tma, add_cross_sma, add_cross_ema, add_cross_tma, add_bollinger, add_supertrend, add_wt, add_rsi, add_donchian, add_hull
-
-
-def add_action_signal(ohlcv_df_dict, func_add_dict, config_params):
-    for symbol_type in ['base', 'lead']:
-        for timeframe in ohlcv_df_dict[symbol_type]:
-            for symbol in ohlcv_df_dict[symbol_type][timeframe]:
-                ohlcv_df = ohlcv_df_dict[symbol_type][timeframe][symbol]
-                
-                for objective in ['open', 'close']:
-                    if timeframe in config_params[symbol_type][objective]:
-                        for signal in config_params[symbol_type][objective][timeframe]:
-                            if signal not in ohlcv_df.columns:
-                                print(f"{symbol_type} add {signal} to {symbol} {timeframe}")
-                                ohlcv_df = func_add_dict[signal](objective, ohlcv_df, timeframe, config_params)
-
-                ohlcv_df_dict[symbol_type][timeframe][symbol] = ohlcv_df
-
-    return ohlcv_df_dict
-
-
-def add_stop_signal(ohlcv_df_dict, func_add_dict, config_params):
-    for objective in ['tp', 'sl']:
-        if (config_params[objective]['signal'] != None):
-            for symbol in ohlcv_df_dict['base'][config_params[objective]['signal']['timeframe']]:
-                ohlcv_df = ohlcv_df_dict['base'][config_params[objective]['signal']['timeframe']][symbol]
-                signal = list(config_params[objective]['signal']['signal'])[0]
-                timeframe = config_params[objective]['signal']['timeframe']
-
-                if signal not in ohlcv_df.columns:
-                    print(f"{objective} add {signal} to {symbol} {timeframe}")
-                    ohlcv_df = func_add_dict[signal](objective, ohlcv_df, timeframe, config_params)
-                    ohlcv_df_dict['base'][timeframe][symbol] = ohlcv_df
-
-    return ohlcv_df_dict
-
-
-def filter_start_time(start_date, ohlcv_df_dict, interval_dict):
-    for symbol_type in ['base', 'lead']:
-        for timeframe in ohlcv_df_dict[symbol_type]:
-            for symbol in ohlcv_df_dict[symbol_type][timeframe]:
-                ohlcv_df = ohlcv_df_dict[symbol_type][timeframe][symbol]
-                
-                first_signal_time = start_date - dt.timedelta(minutes=interval_dict[timeframe])
-                ohlcv_df = ohlcv_df[ohlcv_df['time'] >= first_signal_time].dropna().reset_index(drop=True)
-                ohlcv_df_dict[symbol_type][timeframe][symbol] = ohlcv_df
-
-    return ohlcv_df_dict
-        
-
-def add_signal(start_date, ohlcv_df_dict, interval_dict, config_params):
-    func_add_dict = {
-        'sma': add_sma,
-        'ema': add_ema,
-        'tma': add_tma,
-        'cross_sma': add_cross_sma,
-        'cross_ema': add_cross_ema,
-        'cross_tma': add_cross_tma,
-        'bollinger': add_bollinger,
-        'supertrend': add_supertrend,
-        'wt': add_wt,
-        'rsi': add_rsi,
-        'donchian': add_donchian,
-        'hull': add_hull
-    }
-
-    ohlcv_df_dict = add_action_signal(ohlcv_df_dict, func_add_dict, config_params)
-    ohlcv_df_dict = add_stop_signal(ohlcv_df_dict, func_add_dict, config_params)
-    ohlcv_df_dict = filter_start_time(start_date, ohlcv_df_dict, interval_dict)
-
-    return ohlcv_df_dict
+from func_signal import call_check_signal_func
 
 
 def update_max_drawdown(symbol, side, close_price, max_drawdown, ohlcv_df, position_dict):
@@ -93,9 +23,8 @@ def get_action_base(symbol, objective, action_list, signal_time, config_params, 
         base_ohlcv_df = ohlcv_df_dict['base'][timeframe][symbol]
 
         for signal in config_params['base'][objective][timeframe]:
-            for func_check in config_params['base'][objective][timeframe][signal]['check']:
-                action_side = func_check(objective, 'base', signal_time, signal, action_list, base_ohlcv_df, timeframe, config_params)
-                func_name = str(func_check).split(' ')[1]
+            for func_name in config_params['base'][objective][timeframe][signal]['check']:
+                action_side = call_check_signal_func(func_name)(objective, 'base', signal_time, signal, action_list, base_ohlcv_df, timeframe, config_params)
                 print(f"     base {symbol} {func_name} {signal} {timeframe}: {action_side}")
 
     return action_list
@@ -107,9 +36,8 @@ def get_action_lead(objective, action_list, signal_time, config_params, ohlcv_df
             lead_ohlcv_df = ohlcv_df_dict['lead'][timeframe][lead_symbol]
 
             for signal in config_params['lead'][objective][timeframe]:
-                for func_check in config_params['lead'][objective][timeframe][signal]['check']:
-                    action_side = func_check(objective, 'lead', signal_time, signal, action_list, lead_ohlcv_df, timeframe, config_params)
-                    func_name = str(func_check).split(' ')[1]
+                for func_name in config_params['lead'][objective][timeframe][signal]['check']:
+                    action_side = call_check_signal_func(func_name)(objective, 'lead', signal_time, signal, action_list, lead_ohlcv_df, timeframe, config_params)
                     print(f"     lead {lead_symbol} {func_name} {signal} {timeframe}: {action_side}")
 
     return action_list
