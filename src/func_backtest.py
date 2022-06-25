@@ -107,12 +107,18 @@ def get_tp_flag(symbol, side, current_ohlcv_df, position_dict):
 
 
 def get_sl_flag(symbol, side, current_ohlcv_df, position_dict):
+    print(f"       side: {side}")
+    print(f"       price: {current_ohlcv_df.loc[0, 'low']}")
+    print(f"       sl: {position_dict[symbol]['sl']}")
+
     if (side == 'buy') & (current_ohlcv_df.loc[0, 'low'] <= position_dict[symbol]['sl']):
         sl_flag = True
     elif (side == 'sell') & (current_ohlcv_df.loc[0, 'high'] >= position_dict[symbol]['sl']):
         sl_flag = True
     else:
         sl_flag = False
+
+    print(f"       sl_flag: {sl_flag}")
 
     return sl_flag
 
@@ -174,9 +180,7 @@ def get_stop_price_signal(stop_key, stop_side, symbol, signal_time, stop_price_l
         check_series = check_df.loc[len(check_df) - 1, :]
 
         signal = list(config_params[stop_key]['signal']['signal'])[0]
-
-        if (stop_side == 'upper') & (check_series[signal] > check_series['close']) | (stop_side == 'lower') & (check_series[signal] < check_series['close']):
-            stop_price_list.append(check_series[signal])
+        stop_price_list.append(check_series[signal])
 
     return stop_price_list
 
